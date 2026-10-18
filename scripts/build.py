@@ -82,6 +82,14 @@ def restore() -> None:
     config_text = config_text.replace(old_map, '', 1).replace(
         old_header, 'proxy_set_header Connection "upgrade";', 1)
     config_file.write_text(config_text, encoding='utf-8')
+    # Keep the container smoke test aligned with the map-free banner.
+    smoke_file = PROJECT / 'scripts/smoke-test.py'
+    smoke_text = smoke_file.read_text(encoding='utf-8')
+    previous = 'for fragment in ("map $http_upgrade", "proxy_pass http://127.0.0.1:18080;",'
+    current = 'for fragment in (\'proxy_set_header Connection "upgrade";\', "proxy_pass http://127.0.0.1:18080;",'
+    if smoke_text.count(previous) != 1:
+        raise ValueError('Smoke test expectation changed; refusing unverified patch')
+    smoke_file.write_text(smoke_text.replace(previous, current, 1), encoding='utf-8')
     print(f'PASS: restored {len(members)} build sources, SHA256={actual}')
 
 
