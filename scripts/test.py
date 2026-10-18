@@ -52,7 +52,9 @@ def unit_tests() -> None:
     spec2.loader.exec_module(helper)
     require(helper.ASSETS == ('twp-sources.tar.gz', 'twp-amd64.tar.gz'),
             f'Wrong Release attachment names: {helper.ASSETS}')
-    print('PASS: exactly two public Release assets with twp-* names', flush=True)
+    require(helper.image_tags('20261018T200000Z-bbbbbbbb-cccccccc') == ['twp:latest', 'twp:bbbbbbbb-cccccccc'],
+            'Docker image tags differ from twp:latest and twp:<two-short-IDs>')
+    print('PASS: exactly two public Release assets with twp-* names and twp image tags', flush=True)
 
     # Regression: artifact transfer must preserve the flat dist/ layout;
     # an empty artifact ID downloads every artifact to named subdirectories.
@@ -107,7 +109,7 @@ def unit_tests() -> None:
         require(set(provenance['assets']) == set(helper.ASSETS),
                 'Publication manifest has an unexpected public asset')
     print('PASS: simulated cross-job upload/download and release manifest validation', flush=True)
-    print('PASS: 32 official-commit tracking / Release safety tests', flush=True)
+    print('PASS: 36 official-commit tracking / Release safety tests', flush=True)
 
 
 def smoke_test(image: str) -> None:
@@ -119,7 +121,7 @@ def smoke_test(image: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('unit', 'smoke'))
-    parser.add_argument('--image', default='tg-webproxy-aio:latest')
+    parser.add_argument('--image', default='twp:latest')
     opts = parser.parse_args()
     if opts.command == 'unit':
         unit_tests()
