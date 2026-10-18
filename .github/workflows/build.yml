@@ -1,7 +1,7 @@
 # Upload this file + scripts/build.py + scripts/test.py to an otherwise empty repository.
 # Two official upstream heads are compared to the most recent complete published Release.
 # On no changes, neither a Docker build nor a new Release occurs.
-name: TWP-action
+name: Telegram WEB Proxy AIO - official upstream watcher
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
       plan_json: ${{ steps.upstream.outputs.plan_json }}
     steps:
       - name: Check out the three-file repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -67,11 +67,9 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
-    outputs:
-      artifact_id: ${{ steps.bundle.outputs.artifact-id }}
     steps:
       - name: Check out the same wrapper revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -91,12 +89,26 @@ jobs:
         run: python3 scripts/test.py smoke
       - name: Package the verified Docker image and calculate digests
         run: python3 scripts/build.py package
+      - name: Check all four internal transfer files before upload
+        run: |
+          set -euo pipefail
+          dist=tg-aio-work/project/dist
+          for file in release.json release-body.md twp-sources.tar.gz twp-amd64.tar.gz; do
+            if [ ! -s "$dist/$file" ]; then
+              echo "::error::Missing or empty build output: $dist/$file"
+              exit 1
+            fi
+          done
+          ls -lh "$dist"/release.json "$dist"/release-body.md "$dist"/twp-*.tar.gz
       - name: Upload tested bundle to the publishing job
-        id: bundle
         uses: actions/upload-artifact@v4
         with:
-          name: tg-webproxy-release-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tg-aio-work/project/dist/
+          name: twp-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tg-aio-work/project/dist/release.json
+            tg-aio-work/project/dist/release-body.md
+            tg-aio-work/project/dist/twp-sources.tar.gz
+            tg-aio-work/project/dist/twp-amd64.tar.gz
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
@@ -110,17 +122,32 @@ jobs:
       contents: write
     steps:
       - name: Check out trusted release driver
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Restore SHA256-verified release helper
         run: python3 scripts/build.py restore
-      - name: Download exactly the bundle produced by the build job
+      - name: Download this run's tested bundle by its exact name
         uses: actions/download-artifact@v4
         with:
-          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          # A named single artifact is extracted directly into `path`.
+          # Do not use an empty artifact-ids input: it downloads all artifacts
+          # and creates an extra subdirectory, hiding dist/release.json.
+          name: twp-release-${{ github.run_id }}-${{ github.run_attempt }}
           path: tg-aio-work/project/dist/
+      - name: Check downloaded bundle layout before publishing
+        run: |
+          set -euo pipefail
+          dist=tg-aio-work/project/dist
+          echo "Downloaded transfer files:"
+          find "$dist" -maxdepth 2 -type f -printf '%P (%s bytes)\n' | sort
+          for file in release.json release-body.md twp-sources.tar.gz twp-amd64.tar.gz; do
+            if [ ! -s "$dist/$file" ]; then
+              echo "::error::Missing or empty downloaded file: $dist/$file"
+              exit 1
+            fi
+          done
       - name: Verify asset hashes and publish exactly two Release attachments
         env:
           GH_TOKEN: ${{ github.token }}
