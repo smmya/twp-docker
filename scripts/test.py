@@ -21,7 +21,6 @@ import importlib.util
 import subprocess
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -56,23 +55,22 @@ def unit_tests() -> None:
             'Docker image tags differ from twp:latest and twp:<two-short-IDs>')
     print('PASS: exactly two public Release assets with twp-* names and twp image tags', flush=True)
 
-    # Regression: artifact transfer must preserve the flat dist/ layout;
-    # an empty artifact ID downloads every artifact to named subdirectories.
+    # A two-job workflow is enough: detect, then build-and-publish on one runner.
+    # No upload-artifact or download-artifact step may create run Artifacts.
     workflow = (REPO / '.github/workflows/build.yml').read_text(encoding='utf-8')
-    expected_name = 'twp-release-${{ github.run_id }}-${{ github.run_attempt }}'
-    require(workflow.count('name: ' + expected_name) == 2,
-            'Build and publish must use the exact same artifact name')
-    require('artifact-ids:' not in '\n'.join(
-        line for line in workflow.splitlines() if not line.lstrip().startswith('#')),
-        'Do not use artifact-ids for a single known output')
-    require(workflow.count('path: tg-aio-work/project/dist/') == 1,
-            'Download must extract directly into the expected dist directory')
-    require('tg-aio-work/project/dist/release.json' in workflow,
-            'Upload the internal release manifest')
-    require('tg-aio-work/project/dist/twp-sources.tar.gz' in workflow and
-            'tg-aio-work/project/dist/twp-amd64.tar.gz' in workflow,
-            'Upload both user-visible Release attachments')
-    print('PASS: named transfer artifact and flat dist/release.json layout', flush=True)
+    require('  build_publish:' in workflow and '  detect:' in workflow,
+            'Detection and build/publish stages must both be present')
+    require('needs: detect' in workflow and "needs.detect.outputs.build_needed == 'true'" in workflow,
+            'Do not compile when official upstreams have not changed')
+    require('actions/upload-artifact' not in workflow and 'actions/download-artifact' not in workflow,
+            'Run Artifacts must not be published')
+    require('actions/checkout@v6' in workflow and 'actions/checkout@v4' not in workflow,
+            'Node 24-compatible checkout is required')
+    require('GITHUB_STEP_SUMMARY' not in release_file.read_text(encoding='utf-8'),
+            'Do not write GitHub job summaries')
+    require('python3 scripts/build.py publish' in workflow,
+            'Publish directly after package on the same runner')
+    print('PASS: no job summaries, no run Artifacts, direct Release upload', flush=True)
 
     print('PASS: embedded bundle SHA256 and required build sources', flush=True)
 
@@ -80,9 +78,7 @@ def unit_tests() -> None:
                    cwd=WORK, check=True)
     subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests',
                     '-p', 'test_release.py', '-v'], cwd=WORK, check=True)
-    # Simulate a build-job upload and a fresh publish-job download.
-    # The transport archive must contain four flat files, but the GitHub
-    # Release must still expose only the two twp-* tarballs.
+    # Publish the same locally verified assets; no cross-job transfer needed.
     test_spec = importlib.util.spec_from_file_location(
         'twp_release_fixture', WORK / 'tests/test_release.py')
     require(test_spec is not None and test_spec.loader is not None,
@@ -90,25 +86,14 @@ def unit_tests() -> None:
     fixtures = importlib.util.module_from_spec(test_spec)
     test_spec.loader.exec_module(fixtures)
     with tempfile.TemporaryDirectory() as tmp:
-        build_dist = Path(tmp) / 'build' / 'dist'
-        publish_dist = Path(tmp) / 'publish' / 'dist'
-        build_dist.mkdir(parents=True)
-        publish_dist.mkdir(parents=True)
-        fixtures.PublicationTests().make_bundle(build_dist)
-        archive = Path(tmp) / 'transfer.zip'
-        files = ('release.json', 'release-body.md', *helper.ASSETS)
-        with zipfile.ZipFile(archive, mode='w') as transport:
-            for name in files:
-                transport.write(build_dist / name, arcname=name)
-        with zipfile.ZipFile(archive) as transport:
-            require(set(transport.namelist()) == set(files),
-                    'Transfer archive contains unexpected or nested files')
-            transport.extractall(publish_dist)
+        dist = Path(tmp) / 'dist'
+        dist.mkdir(parents=True)
+        fixtures.PublicationTests().make_bundle(dist)
         provenance = helper.verify_local_bundle(
-            publish_dist, fixtures.REPOSITORY, fixtures.REVISION, '123', '1')
+            dist, fixtures.REPOSITORY, fixtures.REVISION, '123', '1')
         require(set(provenance['assets']) == set(helper.ASSETS),
-                'Publication manifest has an unexpected public asset')
-    print('PASS: simulated cross-job upload/download and release manifest validation', flush=True)
+                'Publication manifest has unexpected public assets')
+    print('PASS: local-only release manifest validation', flush=True)
     print('PASS: 36 official-commit tracking / Release safety tests', flush=True)
 
 
