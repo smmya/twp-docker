@@ -25,7 +25,7 @@ services:
     environment:
       PUBLIC_HOSTNAME: "proxy.example.com"
     volumes:
-      - /opt/twp/data:/data
+      - twp-data:/data
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -38,6 +38,10 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+
+volumes:
+  twp-data:
+    name: twp-data
 ```
 
 启动并查看代理路径、客户端密钥及 Nginx 配置：
