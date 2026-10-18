@@ -66,6 +66,22 @@ def restore() -> None:
     for relative in EXPECTED_FILES:
         if not (PROJECT / relative).is_file():
             raise ValueError(f'Missing embedded source: {relative}')
+    # Keep the printed Nginx example self-contained (no http{} map).
+    config_file = PROJECT / 'runtime/config.go'
+    config_text = config_file.read_text(encoding='utf-8')
+    old_map = (
+        '# Put this map ONCE in nginx\'s http {} context, outside server {}.\n'
+        'map $http_upgrade $tg_webproxy_connection_upgrade {\n'
+        '    default upgrade;\n'
+        '    \'\'      "";\n'
+        '}\n\n'
+    )
+    old_header = 'proxy_set_header Connection $tg_webproxy_connection_upgrade;'
+    if config_text.count(old_map) != 1 or config_text.count(old_header) != 1:
+        raise ValueError('Nginx template changed upstream; refusing unverified patch')
+    config_text = config_text.replace(old_map, '', 1).replace(
+        old_header, 'proxy_set_header Connection "upgrade";', 1)
+    config_file.write_text(config_text, encoding='utf-8')
     print(f'PASS: restored {len(members)} build sources, SHA256={actual}')
 
 
