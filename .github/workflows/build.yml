@@ -1,7 +1,7 @@
 # Upload this file + scripts/build.py + scripts/test.py to an otherwise empty repository.
 # Two official upstream heads are compared to the most recent complete published Release.
 # On no changes, neither a Docker build nor a new Release occurs.
-name: Telegram WEB Proxy AIO - official upstream watcher
+name: TWP-action
 
 on:
   push:
