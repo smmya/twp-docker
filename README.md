@@ -18,15 +18,14 @@ docker load -i twp-amd64.tar.gz
 services:
   twp:
     image: twp:latest
-    pull_policy: never
     container_name: twp
     restart: unless-stopped
     ports:
       - "127.0.0.1:18080:8080"
     environment:
-      PUBLIC_HOSTNAME: proxy.example.com
+      PUBLIC_HOSTNAME: "proxy.example.com"
     volumes:
-      - twp-data:/data
+      - /opt/twp/data:/data
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -39,9 +38,6 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
-
-volumes:
-  twp-data:
 ```
 
 启动并查看代理路径、客户端密钥及 Nginx 配置：
